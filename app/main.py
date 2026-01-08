@@ -2,6 +2,9 @@ import asyncio
 from typing import List
 from pydantic import BaseModel
 
+from app.db.repo import Repository
+from app.db.connection import get_session
+
 from app.scrapers import (
     YoutubeScraper,
     OpenAIScraper,
@@ -25,14 +28,23 @@ async def run_scrappers(hours: int = 24):
     anthropic_scraper = AnthropicScraper()
 
     youtube_videos: List[YoutubeVideo] = []
-    # for channel_id in settings.youtube_channels:
-    #     videos = await youtube_scraper.get_latest_videos(channel_id, hours=hours)
-    #     youtube_videos.extend(videos)
+    for channel_id in settings.youtube_channels:
+        videos = await youtube_scraper.get_latest_videos(channel_id, hours=hours)
+        youtube_videos.extend(videos)
 
-    openai_articles: List[OpenAIArticle] = await openai_scraper.get_articles(hours=hours)
+    openai_articles: List[OpenAIArticle] = await openai_scraper.get_articles(
+        hours=hours
+    )
+
     anthropic_articles: List[AnthropicArticle] = await anthropic_scraper.get_articles(
         hours=hours
     )
+
+    async with get_session() as session:
+        repo = Repository(session=session)
+        await repo.bulk_create_youtube_videos(youtube_videos)
+        await repo.bulk_create_openai_articles(openai_articles)
+        await repo.bulk_create_anthropic_articles(anthropic_articles)
 
     return Feeds(
         youtube=youtube_videos,
