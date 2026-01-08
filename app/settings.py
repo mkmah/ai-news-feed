@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 
+    youtube_proxy_username: str
+    youtube_proxy_password: str
+
     model_config = {
         "env_file": "app/.env",
         "env_file_encoding": "utf-8",

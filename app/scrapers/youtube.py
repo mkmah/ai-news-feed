@@ -1,3 +1,4 @@
+from youtube_transcript_api.proxies import WebshareProxyConfig
 from youtube_transcript_api import (
     YouTubeTranscriptApi,
     TranscriptsDisabled,
@@ -9,6 +10,7 @@ import feedparser
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from typing import List, Optional
+from app.settings import settings
 
 
 class YoutubeVideo(BaseModel):
@@ -23,7 +25,15 @@ class YoutubeVideo(BaseModel):
 
 class YoutubeScraper:
     def __init__(self):
-        self.ytt_api = YouTubeTranscriptApi()
+        proxy_config = None
+
+        if settings.youtube_proxy_username and settings.youtube_proxy_password:
+            proxy_config = WebshareProxyConfig(
+                proxy_username=settings.youtube_proxy_username,
+                proxy_password=settings.youtube_proxy_password,
+            )
+
+        self.transcript_api = YouTubeTranscriptApi(proxy_config=proxy_config)
 
     def _get_rss_url(self, channel_id: str) -> str:
         return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
@@ -67,10 +77,9 @@ class YoutubeScraper:
 
         return videos
 
-    async def _get_transcript(video_id: str) -> Optional[str]:
+    async def get_transcript(self, video_id: str) -> Optional[str]:
         try:
-            ytt_api = YouTubeTranscriptApi()
-            transcript = await asyncio.to_thread(ytt_api.fetch, video_id)
+            transcript = await asyncio.to_thread(self.transcript_api.fetch, video_id)
             return " ".join([snippet.text for snippet in transcript.snippets])
         except (TranscriptsDisabled, NoTranscriptFound):
             return None
@@ -82,7 +91,7 @@ class YoutubeScraper:
     ) -> List[YoutubeVideo]:
         videos = await self._get_latest_videos(channel_id, hours)
 
-        tasks = [self._get_transcript(video.video_id) for video in videos]
+        tasks = [self.get_transcript(video.video_id) for video in videos]
 
         transcripts = await asyncio.gather(*tasks)
 

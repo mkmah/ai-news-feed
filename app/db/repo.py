@@ -166,3 +166,47 @@ class Repository:
             self.session.add_all(new_articles)
             await self.session.commit()
         return len(new_articles)
+
+    async def get_anthropic_articles_without_markdown(
+        self, limit: Optional[int] = None
+    ) -> List[AnthropicArticle]:
+        stmt = select(AnthropicArticle).filter(AnthropicArticle.markdown.is_(None))
+        if limit:
+            stmt = stmt.limit(limit)
+
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def update_anthropic_article_markdown(self, guid: str, markdown: str) -> bool:
+        result = await self.session.execute(
+            select(AnthropicArticle).filter_by(guid=guid)
+        )
+        article = result.scalars().first()
+        if article:
+            article.markdown = markdown
+            await self.session.commit()
+            return True
+        return False
+
+    async def get_youtube_videos_without_transcript(
+        self, limit: Optional[int] = None
+    ) -> List[YouTubeVideo]:
+        stmt = select(YouTubeVideo).filter(YouTubeVideo.transcript.is_(None))
+        if limit:
+            stmt = stmt.limit(limit)
+
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def update_youtube_video_transcript(
+        self, video_id: str, transcript: str
+    ) -> bool:
+        result = await self.session.execute(
+            select(YouTubeVideo).filter_by(video_id=video_id)
+        )
+        video = result.scalars().first()
+        if video:
+            video.transcript = transcript
+            await self.session.commit()
+            return True
+        return False
