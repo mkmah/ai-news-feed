@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 
-    youtube_proxy_username: str
-    youtube_proxy_password: str
+    youtube_proxy_username: Optional[str] = None
+    youtube_proxy_password: Optional[str] = None
+
+    openai_api_key: Optional[str] = None
 
     model_config = {
         "env_file": "app/.env",

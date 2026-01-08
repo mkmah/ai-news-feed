@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle
+from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, Digest
 from .connection import get_session
 from app.scrapers.youtube import YoutubeVideo as PydanticYoutubeVideo
 from app.scrapers.openai import OpenAIArticle as PydanticOpenAIArticle
@@ -210,3 +210,92 @@ class Repository:
             await self.session.commit()
             return True
         return False
+
+    async def get_articles_without_digest(
+        self, limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        articles = []
+        seen_ids = set()
+
+        result = await self.session.execute(select(Digest))
+        digests = result.scalars().all()
+        for d in digests:
+            seen_ids.add(f"{d.article_type}:{d.article_id}")
+
+        result = await self.session.execute(
+            select(YouTubeVideo).filter(
+                YouTubeVideo.transcript.isnot(None),
+                YouTubeVideo.transcript != "__UNAVAILABLE__",
+            )
+        )
+        youtube_videos = result.scalars().all()
+        for video in youtube_videos:
+            key = f"youtube:{video.video_id}"
+            if key not in seen_ids:
+                articles.append(
+                    {
+                        "type": "youtube",
+                        "id": video.video_id,
+                        "title": video.title,
+                        "url": video.url,
+                        "content": video.transcript or video.description or "",
+                    }
+                )
+
+        result = await self.session.execute(select(OpenAIArticle))
+        openai_articles = result.scalars().all()
+        for article in openai_articles:
+            key = f"openai:{article.guid}"
+            if key not in seen_ids:
+                articles.append(
+                    {
+                        "type": "openai",
+                        "id": article.guid,
+                        "title": article.title,
+                        "url": article.url,
+                        "content": article.description or "",
+                    }
+                )
+
+        result = await self.session.execute(
+            select(AnthropicArticle).filter(AnthropicArticle.markdown.isnot(None))
+        )
+        anthropic_articles = result.scalars().all()
+        for article in anthropic_articles:
+            key = f"anthropic:{article.guid}"
+            if key not in seen_ids:
+                articles.append(
+                    {
+                        "type": "anthropic",
+                        "id": article.guid,
+                        "title": article.title,
+                        "url": article.url,
+                        "content": article.markdown or article.description or "",
+                    }
+                )
+
+        if limit:
+            articles = articles[:limit]
+
+        return articles
+
+    async def create_digest(
+        self, article_type: str, article_id: str, url: str, title: str, summary: str
+    ) -> Optional[Digest]:
+        digest_id = f"{article_type}:{article_id}"
+        result = await self.session.execute(select(Digest).filter_by(id=digest_id))
+        existing = result.scalars().first()
+        if existing:
+            return None
+
+        digest = Digest(
+            id=digest_id,
+            article_type=article_type,
+            article_id=article_id,
+            url=url,
+            title=title,
+            summary=summary,
+        )
+        self.session.add(digest)
+        await self.session.commit()
+        return digest
