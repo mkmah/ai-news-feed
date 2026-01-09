@@ -239,6 +239,7 @@ class Repository:
                         "title": video.title,
                         "url": video.url,
                         "content": video.transcript or video.description or "",
+                        "published_at": video.published_at,
                     }
                 )
 
@@ -254,6 +255,7 @@ class Repository:
                         "title": article.title,
                         "url": article.url,
                         "content": article.description or "",
+                        "published_at": article.published_at,
                     }
                 )
 
@@ -271,6 +273,7 @@ class Repository:
                         "title": article.title,
                         "url": article.url,
                         "content": article.markdown or article.description or "",
+                        "published_at": article.published_at,
                     }
                 )
 
@@ -280,13 +283,26 @@ class Repository:
         return articles
 
     async def create_digest(
-        self, article_type: str, article_id: str, url: str, title: str, summary: str
+        self,
+        article_type: str,
+        article_id: str,
+        url: str,
+        title: str,
+        summary: str,
+        published_at: Optional[datetime] = None,
     ) -> Optional[Digest]:
         digest_id = f"{article_type}:{article_id}"
         result = await self.session.execute(select(Digest).filter_by(id=digest_id))
         existing = result.scalars().first()
         if existing:
             return None
+
+        if published_at:
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=timezone.utc)
+            created_at = published_at
+        else:
+            created_at = datetime.now(timezone.utc)
 
         digest = Digest(
             id=digest_id,
@@ -295,6 +311,7 @@ class Repository:
             url=url,
             title=title,
             summary=summary,
+            created_at=created_at,
         )
         self.session.add(digest)
         await self.session.commit()
@@ -303,9 +320,9 @@ class Repository:
     async def get_recent_digests(self, hours: int = 24) -> List[Dict[str, Any]]:
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
         digests = await self.session.execute(
-            select(Digest).filter(
-                Digest.created_at >= cutoff_time
-            ).order_by(Digest.created_at.desc())
+            select(Digest)
+            .filter(Digest.created_at >= cutoff_time)
+            .order_by(Digest.created_at.desc())
         )
         digests = digests.scalars().all()
         return [
@@ -316,7 +333,7 @@ class Repository:
                 "url": d.url,
                 "title": d.title,
                 "summary": d.summary,
-                "created_at": d.created_at
+                "created_at": d.created_at,
             }
             for d in digests
         ]

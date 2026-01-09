@@ -39,11 +39,11 @@ class YoutubeScraper:
         return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
     def _extract_video_id(self, url: str) -> str:
-        if "video.com/watch/?v=" in url:
+        if "youtube.com/watch/?v=" in url:
             return url.split("v=")[1].split("&")[0]
         if "youtube.com/shorts/" in url:
             return url.split("shorts/")[1].split("?")[0]
-        if "video.be/" in url:
+        if "youtu.be/" in url:
             return url.split("youtu.be/")[1].split("?")[0]
         return url
 
@@ -83,15 +83,16 @@ class YoutubeScraper:
             return " ".join([snippet.text for snippet in transcript.snippets])
         except (TranscriptsDisabled, NoTranscriptFound):
             return None
-        except Exception:
+        except Exception as e:
+            print(f"Error getting transcript for {video_id}: {e}")
             return None
 
     async def scrape_channel(
         self, channel_id: str, hours: int = 24
     ) -> List[YoutubeVideo]:
-        videos = await self._get_latest_videos(channel_id, hours)
+        videos = await self.get_latest_videos(channel_id, hours)
 
-        tasks = [self.get_transcript(video.video_id) for video in videos]
+        tasks = [self._get_transcript(video.video_id) for video in videos]
 
         transcripts = await asyncio.gather(*tasks)
 

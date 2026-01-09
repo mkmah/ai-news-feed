@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     openai_api_key: Optional[str] = None
 
+    email_address: Optional[str] = None
+    email_app_password: Optional[str] = None
+
     model_config = {
         "env_file": "app/.env",
         "env_file_encoding": "utf-8",

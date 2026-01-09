@@ -1,5 +1,5 @@
 
-db-up:
+db:
 	docker compose -f deploy/compose.yml up -d
 
 create-migration:
@@ -8,4 +8,4 @@ create-migration:
 migrate:
 	uv run -m alembic upgrade head
 
-.PHONY: db-up create-migration migrate
+.PHONY: db create-migration migrate

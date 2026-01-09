@@ -2,10 +2,11 @@ import asyncio
 from app.db.connection import get_session
 import logging
 
-from app.agents.email import EmailAgent
+from app.agents.email import EmailAgent, RankedArticleDetail, EmailDigestResponse
 from app.agents.curator import CuratorAgent
 from app.profiles.user_profile import USER_PROFILE
 from app.db.repo import Repository
+from app.services.email import send_email, digest_to_html
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def generate_email_digest(hours: int = 24, top_n: int = 10) -> dict:
+async def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestResponse:
     curator = CuratorAgent(USER_PROFILE)
     email_agent = EmailAgent(USER_PROFILE)
 
@@ -27,40 +28,34 @@ async def generate_email_digest(hours: int = 24, top_n: int = 10) -> dict:
 
         if total == 0:
             logger.warning(f"No digests found from the last {hours} hours")
-            return {"error": "No digests available"}
+            raise ValueError("No digests available")
 
         logger.info(f"Ranking {total} digests for email generation")
         ranked_articles = await curator.rank_digests(digests)
 
         if not ranked_articles:
             logger.error("Failed to rank digests")
-            return {"error": "Failed to rank articles"}
+            raise ValueError("Failed to rank articles")
 
         logger.info(f"Generating email digest with top {top_n} articles")
 
+        article_details = [
+            RankedArticleDetail(
+                digest_id=a.digest_id,
+                rank=a.rank,
+                relevance_score=a.relevance_score,
+                reasoning=a.reasoning,
+                title=next((d["title"] for d in digests if d["id"] == a.digest_id), ""),
+                summary=next((d["summary"] for d in digests if d["id"] == a.digest_id), ""),
+                url=next((d["url"] for d in digests if d["id"] == a.digest_id), ""),
+                article_type=next((d["article_type"] for d in digests if d["id"] == a.digest_id), "")
+            )
+            for a in ranked_articles
+        ]
+
         email_digest = await email_agent.create_email_digest(
-            ranked_articles=[
-                {
-                    "digest_id": a.digest_id,
-                    "rank": a.rank,
-                    "relevance_score": a.relevance_score,
-                    "reasoning": a.reasoning,
-                    "title": next(
-                        (d["title"] for d in digests if d["id"] == a.digest_id), ""
-                    ),
-                    "summary": next(
-                        (d["summary"] for d in digests if d["id"] == a.digest_id), ""
-                    ),
-                    "url": next(
-                        (d["url"] for d in digests if d["id"] == a.digest_id), ""
-                    ),
-                    "article_type": next(
-                        (d["article_type"] for d in digests if d["id"] == a.digest_id),
-                        "",
-                    ),
-                }
-                for a in ranked_articles
-            ],
+            ranked_articles=article_details,
+            total_ranked=len(ranked_articles),
             limit=top_n,
         )
 
@@ -69,14 +64,34 @@ async def generate_email_digest(hours: int = 24, top_n: int = 10) -> dict:
         logger.info(email_digest.introduction.greeting)
         logger.info(f"\n{email_digest.introduction.introduction}")
 
+        return email_digest
+
+
+async def send_digest_email(hours: int = 24, top_n: int = 10) -> dict:
+    try:
+        result = await generate_email_digest(hours=hours, top_n=top_n)
+        markdown_content = result.to_markdown()
+        html_content = digest_to_html(result)
+        
+        subject = f"Daily AI News Digest - {result.introduction.greeting.split('for ')[-1] if 'for ' in result.introduction.greeting else 'Today'}"
+        
+        await send_email(
+            subject=subject,
+            body_text=markdown_content,
+            body_html=html_content
+        )
+        
+        logger.info("Email sent successfully!")
         return {
-            "introduction": {
-                "greeting": email_digest.introduction.greeting,
-                "introduction": email_digest.introduction.introduction,
-            },
-            "articles": email_digest.ranked_articles,
-            "total_ranked": len(ranked_articles),
-            "top_n": top_n,
+            "success": True,
+            "subject": subject,
+            "articles_count": len(result.articles)
+        }
+    except ValueError as e:
+        logger.error(f"Error sending email: {e}")
+        return {
+            "success": False,
+            "error": str(e)
         }
 
 
@@ -89,13 +104,13 @@ if __name__ == "__main__":
             print(f"Error: {result['error']}")
         else:
             print("\n=== Email Digest Generated ===")
-            print(f"\n{result['introduction']['greeting']}")
-            print(f"\n{result['introduction']['introduction']}")
-            print(f"\nTop {result['top_n']} articles:")
-            for article in result["articles"]:
+            print(f"\n{result.introduction.greeting}")
+            print(f"\n{result.introduction.introduction}")
+            print(f"\nTop {result.top_n} articles:")
+            for article in result.articles:
                 print(
-                    f"\n{article['rank']}. {article['title']} (Score: {article['relevance_score']:.1f}/10)"
+                    f"\n{article.rank}. {article.title} (Score: {article.relevance_score:.1f}/10)"
                 )
-                print(f"   {article['summary'][:100]}...")
+                print(f"   {article.summary[:100]}...")
 
     asyncio.run(main())

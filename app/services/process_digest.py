@@ -55,6 +55,7 @@ async def process_digests(limit: Optional[int] = None) -> dict:
                         url=article["url"],
                         title=digest_result.title,
                         summary=digest_result.summary,
+                        published_at=article.get("published_at"),
                     )
                     processed += 1
                     logger.info(
