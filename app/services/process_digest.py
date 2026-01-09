@@ -1,6 +1,6 @@
 import asyncio
 from typing import Optional
-from app.agent.digest import DigestAgent
+from app.agents.digest import DigestAgent
 from app.db.repo import Repository
 from app.db.connection import get_session
 import logging
